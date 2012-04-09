@@ -23,25 +23,31 @@
  */
 package org.encog.cloud.basic;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.Socket;
-import java.net.SocketTimeoutException;
-import java.util.ArrayList;
 import java.util.List;
 
 import org.encog.EncogError;
+import org.encog.cloud.node.CloudNode;
+import org.encog.util.csv.CSVFormat;
+import org.encog.util.csv.ParseCSVLine;
+import org.encog.util.logging.EncogLogging;
 
 public class CommunicationLink {	
 	public final int SOCKET_TIMEOUT = 25000;
 	private Socket socket;
 	private ByteArrayOutputStream outputHolder;
 	private DataOutputStream outputToRemote;
-	private DataInputStream inputFromRemote;
+	private BufferedReader inputFromRemote;
 	private OutputStream socketOut;
+	private ParseCSVLine parseLine = new ParseCSVLine(CSVFormat.EG_FORMAT);
+	private int packets;
+	private CloudNode parentNode;
 
 	public static String simpleHash(String str) {
 		int result = 0;
@@ -54,133 +60,54 @@ public class CommunicationLink {
 		return Integer.toHexString(result).toLowerCase();
 	}
 	
-	public CommunicationLink(Socket s) {
+	public CommunicationLink(CloudNode node, Socket s) {
 		try {
+			this.parentNode = node;
 			this.socket = s;
 			this.socket.setSoTimeout(SOCKET_TIMEOUT);
 			
 			this.socketOut = this.socket.getOutputStream();
 			this.outputHolder = new ByteArrayOutputStream();
 			this.outputToRemote = new DataOutputStream(this.outputHolder);
-			this.inputFromRemote = new DataInputStream(this.socket
-					.getInputStream());
+			this.inputFromRemote = new BufferedReader(new InputStreamReader(this.socket.getInputStream()));
 		} catch (IOException ex) {
 			throw new CloudError(ex);
 		}
 
 	}
 
-	public void writePacket(int command) {
-		String[] args = new String[0];
-		writePacket(command,args);
-	}
 	
-	public void writePacketLogin(String uid, String pwd) {
-		String[] args = { uid, pwd };
-		writePacket(CloudPacket.PACKET_LOGIN,args);
-	}
-	
-	public void writePacket(int command, String[] args) {
+	public void writePacket(String command, Object[] args) {
 		try {
-			// first determine length
-			int length = 0;
-			for(int i=0;i<args.length;i++) {
-				length+=args[i].length();
-				length++;
+			StringBuilder line = new StringBuilder();
+			line.append("\"");
+			line.append(command);
+			line.append("\"");
+			for (int i = 0; i < args.length; i++) {
+				line.append(",\"");
+				line.append(args[i].toString());
+				line.append("\"");
 			}
-			
-			// write the packet
-			this.outputToRemote.writeByte('E');
-			this.outputToRemote.writeByte('N');
-			this.outputToRemote.writeByte('C');
-			this.outputToRemote.writeByte('O');
-			this.outputToRemote.writeByte('G');
-			this.outputToRemote.writeByte(0);// string terminator
-			this.outputToRemote.writeByte(0);//version
-			this.outputToRemote.writeByte(command);
-			this.outputToRemote.writeByte(0);//count
-			this.outputToRemote.writeLong(0);//time
-			this.outputToRemote.writeInt(length);//size
-			
-			// write the arguments
-			byte[] b = new byte[length];
-			int index = 0;
-			
-			for(int i=0;i<args.length;i++) {
-				String str = args[i];
-				for(int j=0;j<str.length();j++) {
-					b[index++] = (byte)str.charAt(j);
-				}
-				b[index++] = 0;
-			}
-			
-			this.outputToRemote.write(b);
+			line.append("\n");
+			this.outputToRemote.writeChars(line.toString());
 			this.flushOutput();
-			
 		} catch (IOException ex) {
 			throw new CloudError(ex);
 		}
 	}
 
-	public CloudPacket readPacket() throws IOException {
+	public CloudPacket readPacket() {
 		
 		try {
-		String[] args = null;
-
-		if (this.inputFromRemote.readByte() != 'E')
-			return null;
-		if (this.inputFromRemote.readByte() != 'R')
-			return null;
-		if (this.inputFromRemote.readByte() != 'T')
-			return null;
-		if (this.inputFromRemote.readByte() != 'P')
-			return null;
-		
-		int version = this.inputFromRemote.readByte();
-		int command = this.inputFromRemote.readByte();
-		int count = this.inputFromRemote.readByte();
-		long time = this.inputFromRemote.readLong();
-		int size = this.inputFromRemote.readInt();
-		
-		
-		
-		if( size>0 ) {
-			List<String> list = new ArrayList<String>();
-			StringBuilder builder = new StringBuilder();
-			byte[] b = new byte[size];
-			this.inputFromRemote.read(b);
-			for(int i=0;i<b.length;i++) {
-				if( b[i]==0 ) {
-					list.add(builder.toString());
-					builder.setLength(0);
-				} else {
-					builder.append((char)b[i]);
-				}
-			}
+			String str = this.inputFromRemote.readLine();
+			List<String> list = parseLine.parse(str);
+			this.packets++;
 			
-			args = new String[list.size()];
-			for(int i=0;i<args.length;i++) {
-				args[i] = list.get(i);
-			}
+			EncogLogging.log(EncogLogging.LEVEL_DEBUG, "Received Packet: " + str);
+			return new CloudPacket(list);	
+		} catch(IOException ex) {
+			throw new CloudError(ex);
 		}
-		
-		return new CloudPacket(command,args);
-		}
-		catch(SocketTimeoutException ex) {
-			return null;
-		}
-	}
-
-	public void writeStatus(boolean s, String message) {
-		String[] args = new String[2];
-		args[0] = s ? "1":"0";
-		args[1] = message;
-		writePacket(CloudPacket.PACKET_STATUS,args);		
-	}
-
-	public void writePacketIdentify(String name) {
-		String[] args = { name };
-		writePacket(CloudPacket.PACKET_IDENTIFY,args);
 		
 	}
 	
@@ -191,6 +118,28 @@ public class CommunicationLink {
 		} catch (IOException e) {
 			throw new EncogError(e);
 		}
+		
+	}
+
+	public Socket getSocket() {
+		return this.socket;
+	}
+	
+	public int getPackets() {
+		return this.packets;
+	}
+
+	public void close() {
+		try {
+			this.socket.close();
+		} catch (IOException e) {
+			// ignore, we were trying to close
+		}
+		
+	}
+
+	public void requestSignal(List<String> dataSource) {
+		writePacket("signals",dataSource.toArray());
 		
 	}
 }

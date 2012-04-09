@@ -263,10 +263,8 @@ public class TrainBasicPNN extends BasicTraining implements CalculationCriteria 
 
 				if (deriv) {
 					output = computeDeriv(input, pair.getIdeal());
-					output.getData(0);
 				} else {
 					output = this.network.compute(input);
-					output.getData(0);
 				}
 
 				EngineArray.arrayCopy(output.getData(),out);
@@ -543,13 +541,7 @@ public class TrainBasicPNN extends BasicTraining implements CalculationCriteria 
 			}
 		}
 
-		if (this.network.getOutputMode() == PNNOutputMode.Classification) {
-			final MLData result = new BasicMLData(1);
-			result.setData(0, ibest);
-			return result;
-		}
-
-		return null;
+		return new BasicMLData(out);
 	}
 
 	/**
@@ -601,6 +593,8 @@ public class TrainBasicPNN extends BasicTraining implements CalculationCriteria 
 	@Override
 	public final void iteration() {
 
+		preIteration();
+		
 		if (!this.samplesLoaded) {
 			this.network.setSamples(new BasicMLDataSet(this.training));
 			this.samplesLoaded = true;
@@ -656,8 +650,8 @@ public class TrainBasicPNN extends BasicTraining implements CalculationCriteria 
 		this.network.setError(Math.abs(globalMinimum.getY2()));
 		this.network.setTrained(true); // Tell other routines net is trained
 		this.setError(network.getError());
-
-		return;
+		
+		postIteration();
 
 	}
 

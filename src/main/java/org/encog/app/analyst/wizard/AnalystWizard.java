@@ -810,8 +810,8 @@ public class AnalystWizard {
 					ScriptProperties.ML_TRAIN_TYPE, "svd");
 		}
 
-		this.script.getProperties().setProperty(ScriptProperties.ML_TRAIN_TYPE,
-				this.maxError);
+		this.script.getProperties().setProperty(
+				ScriptProperties.ML_TRAIN_TARGET_ERROR, this.maxError);
 	}
 
 	/**
@@ -1275,6 +1275,33 @@ public class AnalystWizard {
 	 */
 	public final void setTaskSegregate(final boolean theTaskSegregate) {
 		this.taskSegregate = theTaskSegregate;
+	}
+	
+	public final void wizardRealTime(List<String> sourceData, File csvFile) 
+	{
+		this.script.setBasePath(csvFile.getParent());
+		this.script.getProperties().setProperty(
+				ScriptProperties.HEADER_DATASOURCE_SOURCE_HEADERS, true);
+		this.script.getProperties().setProperty(
+				ScriptProperties.HEADER_DATASOURCE_RAW_FILE, csvFile);
+
+		this.timeSeries = ((this.lagWindowSize > 0) || (this.leadWindowSize > 0));
+		this.format = AnalystFileFormat.DECPNT_COMMA;
+
+		determineClassification();
+		generateFilenames(csvFile);
+		generateSettings();
+		//this.analyst.analyze(csvFile, b, format);
+		generateNormalizedFields();
+		generateSegregate();
+
+		generateGenerate();
+
+		generateTasks();
+		if (this.timeSeries && (this.lagWindowSize > 0)
+				&& (this.leadWindowSize > 0)) {
+			expandTimeSlices();
+		}
 	}
 
 	/**
