@@ -763,10 +763,8 @@ public class NEATTraining extends GeneticAlgorithm implements MLTrain {
 			boolean added = false;
 
 			for (final Species s : getPopulation().getSpecies()) {
-				final double compatibility = genome
-						.getCompatibilityScore((NEATGenome) s.getLeader());
-
-				if (compatibility <= this.params.compatibilityThreshold) {
+				final NEATGenome leader = (NEATGenome)s.getLeader();
+				if (leader == null || genome.getCompatibilityScore(leader) <= this.params.compatibilityThreshold) {
 					addSpeciesMember(s, genome);
 					genome.setSpeciesID(s.getSpeciesID());
 					added = true;
